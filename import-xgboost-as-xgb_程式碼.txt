@@ -1,0 +1,578 @@
+#import 各種需要的套件
+import numpy as np
+import pandas as pd
+import xgboost as xgb
+import category_encoders as ce
+from sklearn.model_selection import train_test_split,KFold,StratifiedKFold
+import matplotlib.pyplot as plt
+import eli5
+import shap
+from imblearn.over_sampling import SMOTE
+from imblearn.under_sampling import RandomUnderSampler
+import lightgbm as lgb
+from sklearn.decomposition import PCA
+from tpot import TPOTClassifier
+from sklearn.naive_bayes import *
+from sklearn.metrics import roc_auc_score
+import pickle as pkl
+
+
+train=pd.read_csv('train.csv',encoding='big5').drop('CUS_ID',axis=1)
+test=pd.read_csv('test.csv',encoding='big5').drop('CUS_ID',axis=1)
+sample=pd.read_csv('submit_test.csv',encoding='big5')
+k=10
+folds = StratifiedKFold(n_splits=k, shuffle=True,random_state=seed)
+
+#定義各種變數
+drop_col = [# insignificant predictors from linear model
+#              "CHARGE_CITY_CD", "CONTACT_CITY_CD", 
+             "L1YR_B_ISSUE_CNT",
+             "LAST_B_ISSUE_DT", "CHANNEL_B_POL_CNT", "IF_ISSUE_A_IND",
+             "IF_ISSUE_E_IND", "IF_ISSUE_F_IND", "IF_ISSUE_H_IND",
+             "IF_ISSUE_K_IND", "IF_ISSUE_M_IND", "IF_ADD_G_IND",
+             "C_IND", "IM_IS_A_IND", "X_A_IND",
+             "POLICY_VALUE_AMT", "EXPIRATION_AMT", "ACCIDENT_HOSPITAL_REC_AMT",
+             "OUTPATIENT_SURGERY_AMT", "INPATIENT_SURGERY_AMT", "FIRST_CANCER_AMT","ILL_ADDITIONAL_AMT", 
+             "IF_HOUSEHOLD_CLAIM_IND", "IF_ISSUE_INSD_A_IND",
+             "IF_ISSUE_INSD_D_IND", "IF_ISSUE_INSD_E_IND", "IF_ISSUE_INSD_F_IND",
+             "IF_ISSUE_INSD_K_IND", "IF_ISSUE_INSD_L_IND", "IF_ISSUE_INSD_M_IND",
+             "IF_ISSUE_INSD_O_IND", "IF_ADD_INSD_L_IND", "IF_ADD_INSD_Q_IND",
+             "IF_ADD_INSD_G_IND", "IF_ADD_INSD_IND", "FINANCETOOLS_A",
+             "FINANCETOOLS_B", "FINANCETOOLS_D", "FINANCETOOLS_E",
+             "FINANCETOOLS_F", "FINANCETOOLS_G"]
+
+drop_cols = [# insignificant predictors from linear model (best so far)
+             "CONTACT_CITY_CD", "L1YR_B_ISSUE_CNT", "LAST_B_ISSUE_DT",
+             "INSD_CNT", "LIFE_CNT", "IF_ISSUE_B_IND", "IF_ISSUE_F_IND", "IF_ISSUE_G_IND",
+             "IF_ISSUE_K_IND", "IF_ISSUE_M_IND", "IF_ADD_G_IND", "IF_ADD_R_IND",
+             "AG_CNT", "L1YR_PAYMENT_REMINDER_IND", "L1YR_LAPSE_IND", "C_IND",
+             "L1YR_C_CNT", "IF_S_REAL_IND", "IM_CNT", "IM_IS_A_IND", "IM_IS_B_IND", "IM_IS_C_IND",
+             "IM_IS_D_IND", "TERMINATION_RATE", "X_A_IND", "POLICY_VALUE_AMT",
+             "EXPIRATION_AMT", "ACCIDENT_HOSPITAL_REC_AMT", "DISEASES_HOSPITAL_REC_AMT",
+             "INPATIENT_SURGERY_AMT", "PAY_LIMIT_MED_MISC_AMT", "FIRST_CANCER_AMT", "ILL_ACCELERATION_AMT",
+             "ILL_ADDITIONAL_AMT", "IF_HOUSEHOLD_CLAIM_IND",
+             "IF_ISSUE_INSD_B_IND", "IF_ISSUE_INSD_C_IND", "IF_ISSUE_INSD_D_IND",
+             "IF_ISSUE_INSD_F_IND", "IF_ISSUE_INSD_G_IND", "IF_ISSUE_INSD_H_IND", "IF_ISSUE_INSD_K_IND",
+             "IF_ISSUE_INSD_M_IND", "IF_ISSUE_INSD_N_IND", "IF_ISSUE_INSD_O_IND", "IF_ISSUE_INSD_P_IND",
+             "IF_ISSUE_INSD_Q_IND", "IF_ADD_INSD_F_IND", "IF_ADD_INSD_Q_IND", "IF_ADD_INSD_G_IND",
+             "IF_ADD_INSD_R_IND", "L1YR_GROSS_PRE_AMT", "FINANCETOOLS_A", "FINANCETOOLS_C",
+             "FINANCETOOLS_D", "FINANCETOOLS_E", "FINANCETOOLS_F", "FINANCETOOLS_G"]
+AGE={'低':1, '中':2,'中高':3,'高':4}
+BOOL={'N':0,'Y':1}
+GENDER={'M':0, 'F':1}
+age_col=['AGE','APC_1ST_AGE','INSD_1ST_AGE','RFM_R','REBUY_TIMES_CNT','LIFE_CNT']
+bool_col=['LAST_A_CCONTACT_DT',
+             'LAST_A_ISSUE_DT',
+             'LAST_B_ISSUE_DT',
+             'IF_2ND_GEN_IND',
+             'IF_ISSUE_A_IND',
+             'IF_ISSUE_B_IND',
+             'IF_ISSUE_C_IND',
+             'IF_ISSUE_D_IND',
+             'IF_ISSUE_E_IND',
+             'IF_ISSUE_F_IND',
+             'IF_ISSUE_G_IND',
+             'IF_ISSUE_H_IND',
+             'IF_ISSUE_I_IND',
+             'IF_ISSUE_J_IND',
+             'IF_ISSUE_K_IND',
+             'IF_ISSUE_L_IND',
+             'IF_ISSUE_M_IND',
+             'IF_ISSUE_N_IND',
+             'IF_ISSUE_O_IND',
+             'IF_ISSUE_P_IND',
+             'IF_ISSUE_Q_IND',
+             'IF_ADD_F_IND',
+             'IF_ADD_L_IND',
+             'IF_ADD_Q_IND',
+             'IF_ADD_G_IND',
+             'IF_ADD_R_IND',
+             'IF_ADD_IND',
+             'L1YR_PAYMENT_REMINDER_IND',
+             'L1YR_LAPSE_IND',
+             'LAST_B_CONTACT_DT',
+             'A_IND',
+             'B_IND',
+             'C_IND',
+             'LAST_C_DT',
+             'IF_S_REAL_IND',
+             'IF_Y_REAL_IND',
+             'IM_IS_A_IND',
+             'IM_IS_B_IND',
+             'IM_IS_C_IND',
+             'IM_IS_D_IND',
+             'X_A_IND',
+             'X_B_IND',
+             'X_C_IND',
+             'X_D_IND',
+             'X_E_IND',
+             'X_F_IND',
+             'X_G_IND',
+             'X_H_IND',
+             'IF_HOUSEHOLD_CLAIM_IND',
+             'IF_ISSUE_INSD_A_IND',
+             'IF_ISSUE_INSD_B_IND',
+             'IF_ISSUE_INSD_C_IND',
+             'IF_ISSUE_INSD_D_IND',
+             'IF_ISSUE_INSD_E_IND',
+             'IF_ISSUE_INSD_F_IND',
+             'IF_ISSUE_INSD_G_IND',
+             'IF_ISSUE_INSD_H_IND',
+             'IF_ISSUE_INSD_I_IND',
+             'IF_ISSUE_INSD_J_IND',
+             'IF_ISSUE_INSD_K_IND',
+             'IF_ISSUE_INSD_L_IND',
+             'IF_ISSUE_INSD_M_IND',
+             'IF_ISSUE_INSD_N_IND',
+             'IF_ISSUE_INSD_O_IND',
+             'IF_ISSUE_INSD_P_IND',
+             'IF_ISSUE_INSD_Q_IND',
+             'IF_ADD_INSD_F_IND',
+             'IF_ADD_INSD_L_IND',
+             'IF_ADD_INSD_Q_IND',
+             'IF_ADD_INSD_G_IND',
+             'IF_ADD_INSD_R_IND',
+             'IF_ADD_INSD_IND',
+             'FINANCETOOLS_A',
+             'FINANCETOOLS_B',
+             'FINANCETOOLS_C',
+             'FINANCETOOLS_D',
+             'FINANCETOOLS_E',
+             'FINANCETOOLS_F',
+             'FINANCETOOLS_G',
+             'Y1']
+
+NB_col=['LAST_A_CCONTACT_DT',
+             'LAST_A_ISSUE_DT',
+             'LAST_B_ISSUE_DT',
+             'IF_2ND_GEN_IND',
+             'IF_ISSUE_A_IND',
+             'IF_ISSUE_B_IND',
+             'IF_ISSUE_C_IND',
+             'IF_ISSUE_D_IND',
+             'IF_ISSUE_E_IND',
+             'IF_ISSUE_F_IND',
+             'IF_ISSUE_G_IND',
+             'IF_ISSUE_H_IND',
+             'IF_ISSUE_I_IND',
+             'IF_ISSUE_J_IND',
+             'IF_ISSUE_K_IND',
+             'IF_ISSUE_L_IND',
+             'IF_ISSUE_M_IND',
+             'IF_ISSUE_N_IND',
+             'IF_ISSUE_O_IND',
+             'IF_ISSUE_P_IND',
+             'IF_ISSUE_Q_IND',
+             'IF_ADD_F_IND',
+             'IF_ADD_L_IND',
+             'IF_ADD_Q_IND',
+             'IF_ADD_G_IND',
+             'IF_ADD_R_IND',
+             'IF_ADD_IND',
+             'L1YR_PAYMENT_REMINDER_IND',
+             'L1YR_LAPSE_IND',
+             'LAST_B_CONTACT_DT',
+             'A_IND',
+             'B_IND',
+             'C_IND',
+             'LAST_C_DT',
+             'IF_S_REAL_IND',
+             'IF_Y_REAL_IND',
+             'IM_IS_A_IND',
+             'IM_IS_B_IND',
+             'IM_IS_C_IND',
+             'IM_IS_D_IND',
+             'X_A_IND',
+             'X_B_IND',
+             'X_C_IND',
+             'X_D_IND',
+             'X_E_IND',
+             'X_F_IND',
+             'X_G_IND',
+             'X_H_IND',
+             'IF_HOUSEHOLD_CLAIM_IND',
+             'IF_ISSUE_INSD_A_IND',
+             'IF_ISSUE_INSD_B_IND',
+             'IF_ISSUE_INSD_C_IND',
+             'IF_ISSUE_INSD_D_IND',
+             'IF_ISSUE_INSD_E_IND',
+             'IF_ISSUE_INSD_F_IND',
+             'IF_ISSUE_INSD_G_IND',
+             'IF_ISSUE_INSD_H_IND',
+             'IF_ISSUE_INSD_I_IND',
+             'IF_ISSUE_INSD_J_IND',
+             'IF_ISSUE_INSD_K_IND',
+             'IF_ISSUE_INSD_L_IND',
+             'IF_ISSUE_INSD_M_IND',
+             'IF_ISSUE_INSD_N_IND',
+             'IF_ISSUE_INSD_O_IND',
+             'IF_ISSUE_INSD_P_IND',
+             'IF_ISSUE_INSD_Q_IND',
+             'IF_ADD_INSD_F_IND',
+             'IF_ADD_INSD_L_IND',
+             'IF_ADD_INSD_Q_IND',
+             'IF_ADD_INSD_G_IND',
+             'IF_ADD_INSD_R_IND',
+             'IF_ADD_INSD_IND',
+             'FINANCETOOLS_A',
+             'FINANCETOOLS_B',
+             'FINANCETOOLS_C',
+             'FINANCETOOLS_D',
+             'FINANCETOOLS_E',
+             'FINANCETOOLS_F',
+             'FINANCETOOLS_G'
+           ]
+MNB_col=[   'OCCUPATION_CLASS_CD','GENDER','EDUCATION_CD',
+            'MARRIAGE_CD','AGE','APC_1ST_AGE','INSD_1ST_AGE','RFM_R','REBUY_TIMES_CNT','LIFE_CNT',
+            'LEVEL','RFM_M_LEVEL','IM_CNT'
+        ]
+cat_col=[
+    'CHARGE_CITY_CD',
+    'CONTACT_CITY_CD',
+         'CUST_9_SEGMENTS_CD',
+        ]
+encode_col=['CUST_9_SEGMENTS_CD']
+IF_ISSUE_IND_col=['IF_ISSUE_A_IND',
+             'IF_ISSUE_B_IND',
+             'IF_ISSUE_C_IND',
+             'IF_ISSUE_D_IND',
+             'IF_ISSUE_E_IND',
+             'IF_ISSUE_F_IND',
+             'IF_ISSUE_G_IND',
+             'IF_ISSUE_H_IND',
+             'IF_ISSUE_I_IND',
+             'IF_ISSUE_J_IND',
+             'IF_ISSUE_K_IND',
+             'IF_ISSUE_L_IND',
+             'IF_ISSUE_M_IND',
+             'IF_ISSUE_N_IND',
+             'IF_ISSUE_O_IND',
+             'IF_ISSUE_P_IND',
+             'IF_ISSUE_Q_IND']
+IF_ADD_IND_col=['IF_ADD_F_IND',
+             'IF_ADD_L_IND',
+             'IF_ADD_Q_IND',
+             'IF_ADD_G_IND',
+             'IF_ADD_R_IND']
+FINANCETOOLS_col=[
+             'FINANCETOOLS_A',
+             'FINANCETOOLS_B',
+             'FINANCETOOLS_C',
+             'FINANCETOOLS_D',
+             'FINANCETOOLS_E',
+             'FINANCETOOLS_F',
+             'FINANCETOOLS_G']
+X_IND=[     
+    'X_A_IND',
+             'X_B_IND',
+             'X_C_IND',
+             'X_D_IND',
+             'X_E_IND',
+             'X_F_IND',
+             'X_G_IND',
+             'X_H_IND']
+
+pca_col=[
+    'DIEBENEFIT_AMT',
+         'DIEACCIDENT_AMT', 'POLICY_VALUE_AMT', 'ANNUITY_AMT',
+       'EXPIRATION_AMT', 'ACCIDENT_HOSPITAL_REC_AMT',
+       'DISEASES_HOSPITAL_REC_AMT', 'OUTPATIENT_SURGERY_AMT',
+       'INPATIENT_SURGERY_AMT', 'PAY_LIMIT_MED_MISC_AMT', 'FIRST_CANCER_AMT',
+       'ILL_ACCELERATION_AMT', 'ILL_ADDITIONAL_AMT', 'LONG_TERM_CARE_AMT',
+       'MONTHLY_CARE_AMT']
+
+encode_col=[
+    'CHARGE_CITY_CD',
+    'CONTACT_CITY_CD',
+    'CUST_9_SEGMENTS_CD'
+        ]
+root_col=['POLICY_VALUE_AMT', "L1YR_GROSS_PRE_AMT", "OUTPATIENT_SURGERY_AMT",
+                'EXPIRATION_AMT', 'ACCIDENT_HOSPITAL_REC_AMT', 'INPATIENT_SURGERY_AMT',
+                'ILL_ACCELERATION_AMT', 'ILL_ADDITIONAL_AMT', "DIEBENEFIT_AMT",
+            "APC_1ST_YEARDIF", "ANNUAL_PREMIUM_AMT", "ANNUAL_INCOME_AMT", "INSD_LAST_YEARDIF_CNT",
+            "DIEACCIDENT_AMT", "ANNUITY_AMT",
+            "DISEASES_HOSPITAL_REC_AMT",
+            "PAY_LIMIT_MED_MISC_AMT", "FIRST_CANCER_AMT",
+            "LONG_TERM_CARE_AMT", "MONTHLY_CARE_AMT", "LIFE_INSD_CNT", "L1YR_GROSS_PRE_AMT"]
+CUST_9_SEGMENTS={'A':0,'B':1,'C':2,'D':3,'E':4,'F':5,'G':6,'H':7}
+CITY={'A1':0, 'A2':1, 'B1':2, 'B2':3, 'D':4, 'C1':5, 'C2':6, 'E':7}
+train['CUST_9_SEGMENTS_CD']=train['CUST_9_SEGMENTS_CD'].map(CUST_9_SEGMENTS)
+train['CHARGE_CITY_CD']=train['CHARGE_CITY_CD'].map(CITY)
+train['CONTACT_CITY_CD']=train['CONTACT_CITY_CD'].map(CITY)
+
+test['CUST_9_SEGMENTS_CD']=test['CUST_9_SEGMENTS_CD'].map(CUST_9_SEGMENTS)
+test['CHARGE_CITY_CD']=test['CHARGE_CITY_CD'].map(CITY)
+test['CONTACT_CITY_CD']=test['CONTACT_CITY_CD'].map(CITY)
+
+bin_col=['AGE','EDUCATION_CD','CHARGE_CITY_CD','CONTACT_CITY_CD','MARRIAGE_CD','L1YR_A_ISSUE_CNT',
+         'CHANNEL_A_POL_CNT','APC_CNT','INSD_CNT','INSD_1ST_AGE','RFM_R','LEVEL','RFM_M_LEVEL','LIFE_CNT',
+         'AG_CNT','AG_NOW_CNT','BANK_NUMBER_CNT','TOOL_VISIT_1YEAR_CNT','CUST_9_SEGMENTS_CD'
+        ]
+mapping_dict={'AGE':[2,3],'EDUCATION_CD':[1],'MARRIAGE_CD':[1],'L1YR_A_ISSUE_CNT':[0],
+              'CHANNEL_A_POL_CNT':[0],'INSD_CNT':[0],'INSD_1ST_AGE':[1],'RFM_R':[1],'RFM_R':[1],
+              'LIFE_CNT':[4],'AG_CNT':[0],'AG_NOW_CNT':[0],'BANK_NUMBER_CNT':[0],'CUST_9_SEGMENTS_CD':[2,7]
+             }
+
+binarized=['AGE_binarized', 'EDUCATION_CD_binarized', 'MARRIAGE_CD_binarized', 
+ 'L1YR_A_ISSUE_CNT_binarized', 'CHANNEL_A_POL_CNT_binarized', 'INSD_CNT_binarized',
+ 'INSD_1ST_AGE_binarized', 'RFM_R_binarized', 'LIFE_CNT_binarized', 'AG_CNT_binarized', 
+ 'AG_NOW_CNT_binarized', 'BANK_NUMBER_CNT_binarized', 'CUST_9_SEGMENTS_CD_binarized']
+# 預處理有些註解的feauture在最後的單一模型裡沒有使用到但是在Ensemble中有使用到
+def preprocess(df,test=False): 
+    df['GENDER']=df['GENDER'].map(GENDER)
+    for i in age_col:
+        df[i]=df[i].map(AGE)
+    if test==False:
+        for i in bool_col:
+            df[i]=df[i].map(BOOL)
+    else:
+        for i in bool_col[:-1]:
+            df[i]=df[i].map(BOOL)
+            
+#     value=df[IF_ISSUE_IND_col].sum(axis=1).values
+#     df.insert(loc=2, column='IF_ISSUE_IND_COUNT',value=value)
+#     value=(df[IF_ISSUE_IND_col].sum(axis=1)>0).values
+#     df.insert(loc=2, column='IF_ISSUE_IND_BOOL',value=value)
+#     value=df["OCCUPATION_CLASS_CD"]*df["AGE"]
+#     df.insert(loc=2, column='OCCUPATION_CLASS_CD * AGE',value=value)
+#     value=df['APC_1ST_YEARDIF']*df['AGE']
+#     df.insert(loc=2, column='APC_1ST_YEARDIF * AGE',value=value)
+#     value=df["CHANNEL_A_POL_CNT"]+df["CHANNEL_B_POL_CNT"]
+#     df.insert(loc=2, column='CHANNEL_POL_CNT',value=value)
+#     value=df["INSD_1ST_AGE"]+df["AGE"]
+#     df.insert(loc=2, column='AGES',value=value)
+#     value=df['AGE']*df['BMI']
+#     df.insert(loc=2, column='AGE_BMI',value=value)
+#     value=((df['LAST_A_ISSUE_DT']+2)*(df['LAST_A_CCONTACT_DT']+2))
+#     df.insert(loc=2, column='LAST_A_ISSUE_DT * LAST_A_CCONTACT_DT',value=value)
+#     value=df[X_IND].sum(axis=1).values
+#     df.insert(loc=2, column='X_IND',value=value)
+#     value=df[FINANCETOOLS_col].sum(axis=1).values
+#     df.insert(loc=2, column='FINANCETOOLS',value=value)
+#     value=df[IF_ISSUE_IND_col].sum(axis=1).values
+#     df.insert(loc=2, column='IF_ISSUE_IND',value=value)
+#     value=df[IF_ISSUE_IND_col].sum(axis=1).values
+#     df.insert(loc=2, column='IF_ISSUE_IND_COUNT',value=value)
+
+
+
+
+    value=df['BMI']>=0.175
+    df.insert(loc=2, column='BMI_OVER',value=value)
+    value=(df['L1YR_A_ISSUE_CNT']>0).values
+    df.insert(loc=2, column='L1YR_A_ISSUE_CNT_BOOL',value=value)
+
+    print('binarized')
+    for k,v in mapping_dict.items():
+        value=df[k].isin(v)
+        df.insert(loc=2, column=k+'_binarized',value=value)
+
+    return df
+print('preprocess finish!')
+pca_train_df=pd.read_csv('train.csv',encoding='big5').drop('CUS_ID',axis=1)
+pca_test_df=pd.read_csv('test.csv',encoding='big5').drop('CUS_ID',axis=1)
+
+#Stacking Naive Bayes
+print('BernoulliNB')
+if 'BernoulliNB' not in train :
+    train.insert(loc=2, column='BernoulliNB',value=0)
+    test.insert(loc=2, column='BernoulliNB',value=0)
+for train_index, valid_index in folds.split(train, train['Y1']):
+    X_train=train.iloc[train_index].drop('Y1',axis=1).fillna(-10)
+    X_valid=train.iloc[valid_index].drop('Y1',axis=1).fillna(-10)
+    y_train=train.iloc[train_index]['Y1']
+    y_valid =train.iloc[valid_index]['Y1']
+    clf = BernoulliNB()
+    clf.fit(X_train[NB_col].fillna(-1), y_train)
+    z=clf.predict_proba(X_valid[NB_col])[:,1]
+    train['BernoulliNB'].iloc[valid_index]=z
+#     print(roc_auc_score(y_valid,z))
+    z=clf.predict_proba(test[NB_col].fillna(-10))[:,1]
+    test['BernoulliNB']+=z
+test['BernoulliNB']/=10
+# print('Binarized_BernoulliNB')
+# if 'Binarized_BernoulliNB' not in train :
+#     train.insert(loc=2, column='Binarized_BernoulliNB',value=0)
+#     test.insert(loc=2, column='Binarized_BernoulliNB',value=0)
+# for train_index, valid_index in folds.split(train, train['Y1']):
+#     X_train=train.iloc[train_index].drop('Y1',axis=1).fillna(-10)
+#     X_valid=train.iloc[valid_index].drop('Y1',axis=1).fillna(-10)
+#     y_train=train.iloc[train_index]['Y1']
+#     y_valid =train.iloc[valid_index]['Y1']
+#     clf = BernoulliNB()
+#     clf.fit(X_train[binarized].fillna(-1), y_train)
+#     z=clf.predict_proba(X_valid[binarized])[:,1]
+#     train['Binarized_BernoulliNB'].iloc[valid_index]=z
+#     print(roc_auc_score(y_valid,z))
+#     z=clf.predict_proba(test[binarized].fillna(-10))[:,1]
+#     test['Binarized_BernoulliNB']+=z
+# test['Binarized_BernoulliNB']/=10
+train=train.drop(binarized,axis=1)
+test=test.drop(binarized,axis=1)
+
+
+for i in root_col:   
+    train[i]=train[i]**(1/11)
+
+for i in root_col:   
+    test[i]=test[i]**(1/11)
+print('GaussianNB')
+if 'GaussianNB' not in train:
+    train.insert(loc=2, column='GaussianNB',value=0)
+    test.insert(loc=2, column='GaussianNB',value=0)
+for train_index, valid_index in folds.split(train, train['Y1']):
+    X_train=train.iloc[train_index].drop('Y1',axis=1).fillna(0)
+    X_valid=train.iloc[valid_index].drop('Y1',axis=1).fillna(0)
+    y_train=train.iloc[train_index]['Y1']
+    y_valid =train.iloc[valid_index]['Y1']
+    clf = GaussianNB()
+    clf.fit(X_train[root_col].fillna(-1), y_train)
+    z=clf.predict_proba(X_valid[root_col])[:,1]
+    train['GaussianNB'].iloc[valid_index]=z
+#     print(roc_auc_score(y_valid,z))
+    z=clf.predict_proba(test[root_col].fillna(0))[:,1]
+    test['GaussianNB']+=z
+test['GaussianNB']/=10
+
+# print('MultinomialNB')
+# if 'MultinomialNB' not in train:
+#     train.insert(loc=2, column='MultinomialNB',value=0)
+#     test.insert(loc=2, column='MultinomialNB',value=0)
+# for train_index, valid_index in folds.split(train, train['Y1']):
+#     X_train=train.iloc[train_index].drop('Y1',axis=1).fillna(0)
+#     X_valid=train.iloc[valid_index].drop('Y1',axis=1).fillna(0)
+#     y_train=train.iloc[train_index]['Y1']
+#     y_valid =train.iloc[valid_index]['Y1']
+#     clf = MultinomialNB()
+#     clf.fit(X_train[bin_col].fillna(-1), y_train)
+#     z=clf.predict_proba(X_valid[bin_col])[:,1]
+#     train['MultinomialNB'].iloc[valid_index]=z
+# #     print(roc_auc_score(y_valid,z))
+#     z=clf.predict_proba(test[bin_col].fillna(0))[:,1]
+#     test['MultinomialNB']+=z
+# test['MultinomialNB']/=10
+
+
+# print('NB_all')
+# if 'NB_all' not in train:
+#     train.insert(loc=2, column='NB_all',value=0)
+#     test.insert(loc=2, column='NB_all',value=0)
+# train['NB_all']=train['GaussianNB']*train['BernoulliNB']*train['MultinomialNB']
+# test['NB_all']=test['GaussianNB']*test['BernoulliNB']*test['MultinomialNB']
+print('NB')
+if 'NB' not in train:
+    train.insert(loc=2, column='NB',value=0)
+    test.insert(loc=2, column='NB',value=0)
+train['NB']=train['GaussianNB']*train['BernoulliNB']
+test['NB']=test['GaussianNB']*test['BernoulliNB']
+# print('BernoulliNB_all')
+# if 'BernoulliNB_all' not in train:
+#     train.insert(loc=2, column='BernoulliNB_all',value=0)
+#     test.insert(loc=2, column='BernoulliNB_all',value=0)
+# train['BernoulliNB_all']=train['Binarized_BernoulliNB']*train['BernoulliNB']
+# test['BernoulliNB_all']=test['Binarized_BernoulliNB']*test['BernoulliNB']
+
+
+#Training and cv
+gb_list=[]
+
+
+for var in [0]:
+    best_score=0
+    y_pred_list=[]
+    y_score_list=[]
+    for train_index, valid_index in folds.split(train, train['Y1']):
+        
+        
+        
+        X_train=train.iloc[train_index].drop('Y1',axis=1).fillna(-10)
+        X_valid=train.iloc[valid_index].drop('Y1',axis=1).fillna(-10)
+        
+        y_train=train.iloc[train_index]['Y1']
+        y_valid =train.iloc[valid_index]['Y1']
+
+        
+        
+        pca_train=pca_train_df.iloc[train_index][pca_col].fillna(-0.001)
+        pca_valid=pca_train_df.iloc[valid_index][pca_col].fillna(-0.001)
+        pca_test=pca_test_df[pca_col].fillna(-0.001)
+        
+        
+        pca = PCA(n_components=3)
+        pca_train=pca.fit_transform(pca_train) 
+        pca_valid=pca.transform(pca_valid)
+        pca_test=pca.transform(pca_test)
+        
+        
+        idx=0
+        X_train.insert(loc=2, column='PCA1',value=pca_train[:,idx])
+        X_valid.insert(loc=2, column='PCA1',value=pca_valid[:,idx])
+        if 'PCA1' in test:
+            test['PCA1']=pca_test[:,idx]
+        else:
+            test.insert(loc=2, column='PCA1',value=pca_test[:,idx])
+        idx=1
+        X_train.insert(loc=2, column='PCA2',value=pca_train[:,idx])
+        X_valid.insert(loc=2, column='PCA2',value=pca_valid[:,idx])
+        if 'PCA2' in test:
+            test['PCA2']=pca_test[:,idx]
+        else:
+            test.insert(loc=2, column='PCA2',value=pca_test[:,idx])
+
+        train_D=lgb.Dataset(X_train,y_train,categorical_feature=cat_col)
+        valid_D=lgb.Dataset(X_valid,y_valid,categorical_feature=cat_col)
+        params = {'num_leaves': 30, #30
+#                   'boosting':'dart',
+                  'objective': 'binary', 
+                  'metric': 'auc', 
+#                   'device_type':'gpu', 
+                  'learning_rate':0.01,
+                  'colsample_bytree':0.3, 
+                  'subsample':0.7, 
+                  'max_bin':65,
+                  'min_data_in_leaf':6, #4
+                  'gpu_use_dp':True,
+                  'seed':seed,
+                  'lambda_l2':0.1,
+                  "n_jobs": 7,
+#                   'neg_bagging_fraction':var
+                 }
+
+        gbm_2=lgb.train(params, 
+                        train_set=train_D, 
+                        num_boost_round=100000,
+                        early_stopping_rounds=200,
+                        verbose_eval=False,
+                        valid_sets=[train_D,valid_D])
+        y_pred=gbm_2.predict(X_valid)
+        best_score+=roc_auc_score(y_valid,y_pred)
+        y_pred_list.append(gbm_2.predict(test))
+        y_score_list.append(roc_auc_score(y_valid,y_pred))
+        gb_list.append(gbm_2)
+    best_score/=k
+    print('var_{} : {}'.format(var,best_score))
+
+#output
+final=np.vstack(y_pred_list)
+for i in range(y_pred_list[0].shape[0]):
+    final[:,i].sort()
+sample['Ypred']=final[-1]
+sample.to_csv('lgb_{}_max.csv'.format(best_score),index=False)
+
+sample['Ypred']=sum(y_pred_list)/len(y_pred_list)
+sample.to_csv('lgb_{}.csv'.format(best_score),index=False)
+
+sample['Ypred']=(y_pred_list[8]+y_pred_list[2]+y_pred_list[4]+y_pred_list[5])/4
+sample.to_csv('lgb_{}_4bestavg.csv'.format(best_score),index=False)
+sample['Ypred']=1
+for i in y_pred_list:
+    sample['Ypred']*=i
+sample['Ypred']=((sample['Ypred'])**(1/10))
+sample.to_csv('lgb_{}_hmean.csv'.format(best_score),index=False)
+
+
+#Visualize Shap importance
+shap.initjs()
+explainer = shap.TreeExplainer(gb_list[0])
+shap_values = explainer.shap_values(X_train)
+shap.summary_plot(shap_values, X_train, plot_type="bar",max_display=200)
